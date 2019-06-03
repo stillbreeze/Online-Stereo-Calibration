@@ -15,11 +15,18 @@ The above command will create a folder `trial_exp` with 2 files.
 
 By default, the data for the calibration is picked up from [`examples/Data/StereoSelfCalibration/`](examples/Data/StereoSelfCalibration/) folder. All these files are space separated values of poses (in the order yaw, pitch, roll, x, y, z) in radians/meters or landmarks (in the order x, y, z) in meters. There are 5 files, namely the feature points, the ground truth pose, the deviated pose (to simulate odometry measurements), relative extrinsic pose and deviated extrinsic pose. They currently simulate a straight trajectory.
 
+The executable also accepts the paths of the 5 files mentioned above as command line arguments:
+
+```
+./StereoSelfCalibrationAPI trial_exp 1 feature_filepath pose_filepath pose_deviated_filepath extrinsic_filepath extrinsic_deviated_filepath
+```
+
+In case someone wants to modify a part of the code, the main script is here: [`examples/StereoSelfCalibrationAPI.cpp`](examples/StereoSelfCalibrationAPI.cpp)
+
 Factor graph model used
 -----------------------
 
 ![Factor graph model for online stereo calibration](factor_graph.png)
-
 
 
 What is GTSAM?
