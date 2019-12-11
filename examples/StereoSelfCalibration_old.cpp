@@ -5,9 +5,6 @@
 // Camera observations of landmarks (i.e. pixel coordinates) will be stored as Point2 (x, y).
 #include <gtsam/geometry/Point2.h>
 
-// Post optimization covariance matrices
-#include <gtsam/nonlinear/Marginals.h>
-
 // Inference and optimization
 #include <gtsam/inference/Symbol.h>
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
@@ -20,14 +17,12 @@
 #include <gtsam/slam/PriorFactor.h>
 #include <gtsam/slam/ProjectionFactor.h>
 #include <gtsam/slam/ProjectionFactorCalibration.h> // does calibration !
-#include <gtsam/slam/ProjectionFactorCalibrationWithTranslation.h> // does calibration !
 
 // Standard headers
 #include <cmath>
 #include <vector>
 #include <cstdlib>
 #include <fstream>
-#include <typeinfo>
 #include <iostream>
 
 using namespace std;
@@ -46,13 +41,6 @@ int main(int argc, char* argv[]) {
   int total_pts = atoi(argv[4]);
   float measurement_noise = atof(argv[5]);
   string exp_name = argv[6];
-  string opt_translation_flag;
-  if (argc > 7){
-    opt_translation_flag = argv[7];
-  }
-  else{
-    opt_translation_flag = "false";
-  }
 
   // Create experiment directory
   const int dir_err = system(("mkdir -p " + exp_name).c_str());
@@ -66,14 +54,9 @@ int main(int argc, char* argv[]) {
   bool print_log = false;
   bool print_log_final = false;
   bool feature_rounding = false;
-  bool opt_translation = false;
 
   if (rounding_flag == "true"){
     feature_rounding = true;
-  }
-
-  if (opt_translation_flag == "true"){
-    opt_translation = true;
   }
 
   // Create the set of ground-truth
@@ -87,18 +70,14 @@ int main(int argc, char* argv[]) {
   // Create the factor graph
   NonlinearFactorGraph graph;
 
+
   // Add a prior on pose x1
   noiseModel::Diagonal::shared_ptr poseNoise = noiseModel::Diagonal::Sigmas((Vector(6) << Vector3::Constant(0.3), Vector3::Constant(0.1)).finished()); // 30cm std on x,y,z 0.1 rad on roll,pitch,yaw
   graph.emplace_shared<PriorFactor<Pose3> >(Symbol('x', 0), poses[0], poseNoise);
 
   // Add a prior on the extrinsic calibration parameters
-  noiseModel::Diagonal::shared_ptr extrinsicNoise = noiseModel::Diagonal::Sigmas((Vector(3) << Vector3::Constant(0.3)).finished()); // 30cm std on x,y,z 0.1 rad on roll,pitch,yaw
-  graph.emplace_shared<PriorFactor<Rot3> >(Symbol('R', 0), extrinsic[0].rotation(), extrinsicNoise);
-
-  if (opt_translation){
-    noiseModel::Diagonal::shared_ptr baselineNoise = noiseModel::Diagonal::Sigmas((Vector(3) << Vector3::Constant(0.3)).finished()); // 30cm std on x,y,z 0.1 rad on roll,pitch,yaw
-    graph.emplace_shared<PriorFactor<Point3> >(Symbol('t', 0), extrinsic[0].translation(), baselineNoise);
-  }
+  noiseModel::Diagonal::shared_ptr extrinsicNoise = noiseModel::Diagonal::Sigmas((Vector(6) << Vector3::Constant(0.3), Vector3::Constant(0.1)).finished()); // 30cm std on x,y,z 0.1 rad on roll,pitch,yaw
+  graph.emplace_shared<PriorFactor<Pose3> >(Symbol('R', 0), extrinsic[0], extrinsicNoise);
 
   // Define intrinsics
   Cal3_S2::shared_ptr KLeft(new Cal3_S2(350.0, 350.0, 0.0, 336.0, 188.0));
@@ -248,12 +227,7 @@ int main(int argc, char* argv[]) {
         visible_landmarks[j] = 1;
         feature_count++;
         graph.emplace_shared<GenericProjectionFactor<Pose3, Point3, Cal3_S2> >(measurementLeft, measurementNoise, Symbol('x', i), Symbol('l', j), KLeft);
-        if (opt_translation){
-          graph.emplace_shared<ProjectionFactorCalibrationWithTranslation<Pose3, Point3, Rot3, Point3, Cal3_S2> >(measurementRight, measurementNoise, Symbol('x', i), Symbol('R', i), Symbol('t', i), Symbol('l', j), KRight);
-        }
-        else{
-          graph.emplace_shared<ProjectionFactorCalibration<Pose3, Point3, Rot3, Cal3_S2> >(measurementRight, measurementNoise, Symbol('x', i), Symbol('R', i), Symbol('l', j), KRight);
-        }
+        graph.emplace_shared<ProjectionFactorCalibration<Pose3, Point3, Cal3_S2> >(measurementRight, measurementNoise, Symbol('x', i), Symbol('R', i), Symbol('l', j), KRight);
       }
     }
     if (print_log){
@@ -271,11 +245,7 @@ int main(int argc, char* argv[]) {
   /* now including an estimate on the camera calibration parameters */
   Values initialEstimate;
   for (size_t i = 0; i < poses.size(); ++i)
-    initialEstimate.insert(Symbol('R', i), extrinsic[i].rotation());
-  if (opt_translation){
-    for (size_t i = 0; i < poses.size(); ++i)
-      initialEstimate.insert(Symbol('t', i), extrinsic[i].translation());
-  }
+    initialEstimate.insert(Symbol('R', i), extrinsic[i]);
   for (size_t i = 0; i < poses.size(); ++i)
     // initialEstimate.insert(Symbol('x', i), poses[i].compose(Pose3(Rot3::Rodrigues(-0.1, 0.2, 0.25), Point3(0.05, -0.10, 0.20))));
     initialEstimate.insert(Symbol('x', i), poses[i]);
@@ -285,66 +255,50 @@ int main(int argc, char* argv[]) {
     }
   }
 
+  // Constrain the baseline to the first pose translation
+  Pose3 first_pose = initial_estimate.at<Point3>(Symbol('x',1));
+  graph.emplace_shared<NonlinearEquality<Pose3> >(Symbol('x',1), first_pose);
+
   /* Optimize the graph and print results */
   // Values result = DoglegOptimizer(graph, initialEstimate).optimize();
   Values result = LevenbergMarquardtOptimizer(graph, initialEstimate).optimize();
 
-  Values rot_filtered = result.filter(Symbol::ChrTest('R'));
-  Key Rkey = symbol('R', poses.size()-1);
-  Rot3 estimated_rotation = rot_filtered.at(Rkey).cast<Rot3>();
-  Point3 estimated_translation;
+  Values pose_filtered = result.filter(Symbol::ChrTest('R'));
 
-  if (opt_translation){
-    Values trans_filtered = result.filter(Symbol::ChrTest('t'));
-    Key tkey = symbol('t', poses.size()-1);
-    estimated_translation = trans_filtered.at(tkey).cast<Point3>();
+  int i = 0;
+  Vector3 rot_final_error;
+  Vector3 tr_final_error;
+
+  for(const Values::Filtered<Value>::KeyValuePair& key_value: pose_filtered.filter(Symbol::ChrTest('R'))) {
+    Pose3 estimated_extrinsic = key_value.value.cast<Pose3>();
+    Pose3 error_pose = estimated_extrinsic.compose(deviatedExtrinsics[i].inverse());
+
+    // Vector3 rot = estimated_extrinsic.rotation().ypr();
+    // Point3 tr = estimated_extrinsic.translation();
+
+    Vector3 error_rot = error_pose.rotation().ypr();
+    Point3 error_tr = error_pose.translation();
+
+    rot_final_error = error_rot;
+    tr_final_error = error_tr;
+    if (print_log) {
+      cout << error_rot;
+      cout << "\n";
+      cout << error_tr;
+      cout << "\n";
+      cout << "\n";
+    }
+    // if (print_log) {
+    //   cout << estimated_extrinsic;
+    //   cout << "\n";
+    //   cout << extrinsic[i];
+    //   cout << "\n";
+    //   cout << deviatedExtrinsics[i];
+    //   cout << "\n";
+    //   cout << "\n";
+    // }
+    ++i;
   }
-  else{
-    estimated_translation = Point3(0.0, 0.1, 0.0);
-  }
-
-  Pose3 estimated_extrinsic_pose = Pose3(estimated_rotation, estimated_translation);
-  Pose3 error_pose = estimated_extrinsic_pose.compose(deviatedExtrinsics[poses.size()-1].inverse());
-  Vector3 rot_final_error = error_pose.rotation().ypr();
-  Vector3 tr_final_error = error_pose.translation();
-
-
-  // Calcuate errors and store them
-  // int i = 0;
-  // Vector3 rot_final_error;
-  // Vector3 tr_final_error;
-  // Pose3 estimated_extrinsic_pose;
-  // for(const Values::Filtered<Value>::KeyValuePair& key_value: pose_filtered.filter(Symbol::ChrTest('R'))) {
-  //   Rot3 estimated_extrinsic = key_value.value.cast<Rot3>();
-  //   cout << estimated_extrinsic << "\n";
-  //   estimated_extrinsic_pose = Pose3(estimated_extrinsic, Point3(0.0, 0.1, 0.0));
-  //   Pose3 error_pose = estimated_extrinsic_pose.compose(deviatedExtrinsics[i].inverse());
-  //   // Vector3 rot = estimated_extrinsic.rotation().ypr();
-  //   // Point3 tr = estimated_extrinsic.translation();
-
-  //   Vector3 error_rot = error_pose.rotation().ypr();
-  //   Point3 error_tr = error_pose.translation();
-
-  //   rot_final_error = error_rot;
-  //   tr_final_error = error_tr;
-  //   if (print_log) {
-  //     cout << error_rot;
-  //     cout << "\n";
-  //     cout << error_tr;
-  //     cout << "\n";
-  //     cout << "\n";
-  //   }
-  //   // if (print_log) {
-  //   //   cout << estimated_extrinsic;
-  //   //   cout << "\n";
-  //   //   cout << extrinsic[i];
-  //   //   cout << "\n";
-  //   //   cout << deviatedExtrinsics[i];
-  //   //   cout << "\n";
-  //   //   cout << "\n";
-  //   // }
-  //   ++i;
-  // }
 
   ofstream file;
   string filename;
@@ -356,83 +310,6 @@ int main(int argc, char* argv[]) {
   file << tr_final_error << "\n";
   file << mean_feature_count << "\n";
   file.close();
-
-  // Computing the mean epipolar error and reprojection error of the batch segment
-  float total_count = 0;
-  float reprojection_error_sum = 0.0;
-  float epipolar_error_sum = 0.0;
-  for (size_t i = 0; i < poses.size(); ++i) {
-    for (size_t j = 0; j < points.size(); ++j) {
-      Pose3 poseLeft = deviatedPoses[i];
-      Pose3 poseRight = poseLeft.compose(estimated_extrinsic_pose);
-      Pose3 poseRightGroundTruth = poseLeft.compose(deviatedExtrinsics[i]);
-      SimpleCamera cameraLeft(poseLeft, *KLeft);
-      SimpleCamera cameraRight(poseRight, *KRight);
-      SimpleCamera cameraRightGroundTruth(poseRightGroundTruth, *KRight);
-      Point2 measurementLeft, measurementRight, measurementRightGroundTruth;
-      try{
-        measurementLeft = cameraLeft.project(points[j]);
-      }
-      catch (...){
-        if (print_log)
-        continue;
-      }
-      try{
-        measurementRight = cameraRight.project(points[j]);
-      }
-      catch (...){
-        if (print_log)
-        continue;
-      }
-      try{
-        measurementRightGroundTruth = cameraRightGroundTruth.project(points[j]);
-      }
-      catch (...){
-        if (print_log)
-        continue;
-      }
-
-      bool lower_bound = (measurementLeft[0] > 0.0 && measurementLeft[1] > 0.0 && measurementRight[0] > 0.0 && measurementRight[1] > 0.0  && measurementRightGroundTruth[0] > 0.0 && measurementRightGroundTruth[1] > 0.0);
-      bool upper_bound = (measurementLeft[0] < 672.0 && measurementLeft[1] < 376.0 && measurementRight[0] < 672.0 && measurementRight[1] < 376.0 && measurementRightGroundTruth[0] < 672.0 && measurementRightGroundTruth[1] < 376.0);
-      if (lower_bound && upper_bound){
-        total_count++; 
-        float distance = sqrt(pow(measurementRight[0] - measurementRightGroundTruth[0], 2) + pow(measurementRight[1] - measurementRightGroundTruth[1], 2));
-        reprojection_error_sum += distance;
-        Matrix3 essential_matrix_estimated = skewSymmetric(0.0, 0.1, 0.0) * estimated_extrinsic_pose.rotation().matrix();
-        Vector3 xleft = (*KLeft).matrix_inverse() * Vector3(measurementLeft[0], measurementLeft[1], 1);
-        Vector3 xright = (*KRight).matrix_inverse() * Vector3(measurementRight[0], measurementRight[1], 1);
-        epipolar_error_sum += fabs(xright.transpose() * essential_matrix_estimated * xleft);
-      }
-    }
-  }
-  float mean_reprojection_error = reprojection_error_sum / total_count;
-  float mean_epipolar_error = epipolar_error_sum / total_count;
-
-  // Estimating the information theoretic metrics of the batch segment
-  try{
-    Marginals marginals(graph, result);
-    Matrix marginal_covariance_extrinsics = marginals.marginalCovariance(Symbol('R', poses.size()-1));
-    Matrix fisher_information_matrix = marginal_covariance_extrinsics.inverse();
-    float a_optimality = fisher_information_matrix.trace();
-    float d_optimality = fisher_information_matrix.determinant();
-    float e_optimality = fisher_information_matrix.eigenvalues()(0).real();
-
-    ofstream file;
-    string filename;
-    filename = exp_name + "/information_metrics_";
-    filename += to_string(counter);
-    filename += ".txt";
-    file.open (filename);
-    file << a_optimality << "\n";
-    file << d_optimality << "\n";
-    file << e_optimality << "\n";
-    file << mean_reprojection_error << "\n";
-    file << mean_epipolar_error << "\n";
-    file.close();
-  }
-  catch (...){
-  }
-
 
   if (print_log_final){
     cout << "\n";

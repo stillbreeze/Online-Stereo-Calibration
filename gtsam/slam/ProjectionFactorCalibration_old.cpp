@@ -12,8 +12,8 @@ namespace gtsam {
    * i.e. the main building block for visual SLAM.
    * @addtogroup SLAM
    */
-  template<class POSE, class LANDMARK, class ROT, class CALIBRATION = Cal3_S2>
-  class ProjectionFactorCalibration: public NoiseModelFactor3<POSE, ROT, LANDMARK> {
+  template<class POSE, class LANDMARK, class CALIBRATION = Cal3_S2>
+  class ProjectionFactorCalibration: public NoiseModelFactor3<POSE, POSE, LANDMARK> {
   protected:
 
     // Keep a copy of measurement and calibration for I/O
@@ -27,10 +27,10 @@ namespace gtsam {
   public:
 
     /// shorthand for base class type
-    typedef NoiseModelFactor3<POSE, ROT, LANDMARK> Base;
+    typedef NoiseModelFactor3<POSE, POSE, LANDMARK> Base;
 
     /// shorthand for this class
-    typedef ProjectionFactorCalibration<POSE, LANDMARK, ROT, CALIBRATION> This;
+    typedef ProjectionFactorCalibration<POSE, LANDMARK, CALIBRATION> This;
 
     /// shorthand for a smart pointer to a factor
     typedef boost::shared_ptr<This> shared_ptr;
@@ -103,28 +103,25 @@ namespace gtsam {
     }
 
     /// Evaluate error h(x)-z and optionally derivatives
-    Vector evaluateError(const Pose3& pose, const Rot3& transform, const Point3& point,
+    Vector evaluateError(const Pose3& pose, const Pose3& transform, const Point3& point,
         boost::optional<Matrix&> H1 = boost::none,
         boost::optional<Matrix&> H2 = boost::none,
         boost::optional<Matrix&> H3 = boost::none) const {
       try {
           if(H1 || H2 || H3) {
-            Matrix H0, H02, HRt;
-            Pose3 extrinsics = Pose3(transform, Point3(0.0, 0.1, 0.0));
-            PinholeCamera<CALIBRATION> camera(pose.compose(extrinsics, H0, H02), *K_);
+            Matrix H0, H02;
+            PinholeCamera<CALIBRATION> camera(pose.compose(transform, H0, H02), *K_);
             Point2 reprojectionError(camera.project(point, H1, H3, boost::none) - measured_);
-            HRt = *H1 * H02;
-            *H2 = HRt.block<2,3>(0,0);
+            *H2 = *H1 * H02;
             *H1 = *H1 * H0;
             return reprojectionError;
           } else {
-            Pose3 extrinsics = Pose3(transform, Point3(0.0, 0.1, 0.0));
-            PinholeCamera<CALIBRATION> camera(pose.compose(extrinsics), *K_);
+            PinholeCamera<CALIBRATION> camera(pose.compose(transform), *K_);
             return camera.project(point, H1, H3, boost::none) - measured_;
           }
       } catch( CheiralityException& e) {
         if (H1) *H1 = Matrix::Zero(2,6);
-        if (H2) *H2 = Matrix::Zero(2,3);
+        if (H2) *H2 = Matrix::Zero(2,6);
         if (H3) *H3 = Matrix::Zero(2,3);
         if (verboseCheirality_)
           std::cout << e.what() << ": Landmark "<< DefaultKeyFormatter(this->key2()) <<
@@ -166,9 +163,9 @@ namespace gtsam {
   };
 
   /// traits
-  template<class POSE, class LANDMARK, class ROT, class CALIBRATION>
-  struct traits<ProjectionFactorCalibration<POSE, LANDMARK, ROT, CALIBRATION> > :
-      public Testable<ProjectionFactorCalibration<POSE, LANDMARK, ROT, CALIBRATION> > {
+  template<class POSE, class LANDMARK, class CALIBRATION>
+  struct traits<ProjectionFactorCalibration<POSE, LANDMARK, CALIBRATION> > :
+      public Testable<ProjectionFactorCalibration<POSE, LANDMARK, CALIBRATION> > {
   };
 
 } // \ namespace gtsam
