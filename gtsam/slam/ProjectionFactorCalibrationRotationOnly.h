@@ -5,6 +5,8 @@
 #include <gtsam/geometry/Cal3_S2.h>
 #include <boost/optional.hpp>
 
+// #include "examples/ReadTrajectory.h"
+
 namespace gtsam {
 
   /**
@@ -12,8 +14,8 @@ namespace gtsam {
    * i.e. the main building block for visual SLAM.
    * @addtogroup SLAM
    */
-  template<class POSE, class LANDMARK, class CALIBRATION = Cal3_S2>
-  class ProjectionFactorCalibration: public NoiseModelFactor3<POSE, POSE, LANDMARK> {
+  template<class POSE, class LANDMARK, class ROT, class CALIBRATION = Cal3_S2>
+  class ProjectionFactorCalibrationRotationOnly: public NoiseModelFactor3<POSE, ROT, LANDMARK> {
   protected:
 
     // Keep a copy of measurement and calibration for I/O
@@ -27,16 +29,16 @@ namespace gtsam {
   public:
 
     /// shorthand for base class type
-    typedef NoiseModelFactor3<POSE, POSE, LANDMARK> Base;
+    typedef NoiseModelFactor3<POSE, ROT, LANDMARK> Base;
 
     /// shorthand for this class
-    typedef ProjectionFactorCalibration<POSE, LANDMARK, CALIBRATION> This;
+    typedef ProjectionFactorCalibrationRotationOnly<POSE, LANDMARK, ROT, CALIBRATION> This;
 
     /// shorthand for a smart pointer to a factor
     typedef boost::shared_ptr<This> shared_ptr;
 
     /// Default constructor
-  ProjectionFactorCalibration() :
+  ProjectionFactorCalibrationRotationOnly() :
       measured_(0.0, 0.0), throwCheirality_(false), verboseCheirality_(false) {
   }
 
@@ -50,7 +52,7 @@ namespace gtsam {
      * @param pointKey is the index of the landmark
      * @param K shared pointer to the constant calibration
      */
-    ProjectionFactorCalibration(const Point2& measured, const SharedNoiseModel& model,
+    ProjectionFactorCalibrationRotationOnly(const Point2& measured, const SharedNoiseModel& model,
         Key poseKey, Key transformKey,  Key pointKey,
         const boost::shared_ptr<CALIBRATION>& K) :
           Base(model, poseKey, transformKey, pointKey), measured_(measured), K_(K),
@@ -67,7 +69,7 @@ namespace gtsam {
      * @param throwCheirality determines whether Cheirality exceptions are rethrown
      * @param verboseCheirality determines whether exceptions are printed for Cheirality
      */
-    ProjectionFactorCalibration(const Point2& measured, const SharedNoiseModel& model,
+    ProjectionFactorCalibrationRotationOnly(const Point2& measured, const SharedNoiseModel& model,
         Key poseKey, Key transformKey, Key pointKey,
         const boost::shared_ptr<CALIBRATION>& K,
         bool throwCheirality, bool verboseCheirality) :
@@ -75,7 +77,7 @@ namespace gtsam {
           throwCheirality_(throwCheirality), verboseCheirality_(verboseCheirality) {}
 
     /** Virtual destructor */
-    virtual ~ProjectionFactorCalibration() {}
+    virtual ~ProjectionFactorCalibrationRotationOnly() {}
 
     /// @return a deep copy of this factor
     virtual NonlinearFactor::shared_ptr clone() const {
@@ -88,7 +90,7 @@ namespace gtsam {
      * @param keyFormatter optional formatter useful for printing Symbols
      */
     void print(const std::string& s = "", const KeyFormatter& keyFormatter = DefaultKeyFormatter) const {
-      std::cout << s << "ProjectionFactorCalibration, z = ";
+      std::cout << s << "ProjectionFactorCalibrationRotationOnly, z = ";
       traits<Point2>::Print(measured_);
       Base::print("", keyFormatter);
     }
@@ -103,25 +105,33 @@ namespace gtsam {
     }
 
     /// Evaluate error h(x)-z and optionally derivatives
-    Vector evaluateError(const Pose3& pose, const Pose3& transform, const Point3& point,
+    // !!Translation value hardcoded!!
+    Vector evaluateError(const Pose3& pose, const Rot3& transform, const Point3& point,
         boost::optional<Matrix&> H1 = boost::none,
         boost::optional<Matrix&> H2 = boost::none,
         boost::optional<Matrix&> H3 = boost::none) const {
       try {
+          // HARDCODED PATH FOR FIXED TRANSLATION VECTOR
+          std::string fixed_translation_path = "../../examples/Data/StereoSelfCalibration/FixedTranslationVector.txt";
+          Point3 fixed_extrinsic_translation =  readTranslation(fixed_translation_path);
+
           if(H1 || H2 || H3) {
-            Matrix H0, H02;
-            PinholeCamera<CALIBRATION> camera(pose.compose(transform, H0, H02), *K_);
+            Matrix H0, H02, HRt;
+            Pose3 extrinsics = Pose3(transform, fixed_extrinsic_translation);
+            PinholeCamera<CALIBRATION> camera(pose.compose(extrinsics, H0, H02), *K_);
             Point2 reprojectionError(camera.project(point, H1, H3, boost::none) - measured_);
-            *H2 = *H1 * H02;
+            HRt = *H1 * H02;
+            *H2 = HRt.block<2,3>(0,0);
             *H1 = *H1 * H0;
             return reprojectionError;
           } else {
-            PinholeCamera<CALIBRATION> camera(pose.compose(transform), *K_);
+            Pose3 extrinsics = Pose3(transform, fixed_extrinsic_translation);
+            PinholeCamera<CALIBRATION> camera(pose.compose(extrinsics), *K_);
             return camera.project(point, H1, H3, boost::none) - measured_;
           }
       } catch( CheiralityException& e) {
         if (H1) *H1 = Matrix::Zero(2,6);
-        if (H2) *H2 = Matrix::Zero(2,6);
+        if (H2) *H2 = Matrix::Zero(2,3);
         if (H3) *H3 = Matrix::Zero(2,3);
         if (verboseCheirality_)
           std::cout << e.what() << ": Landmark "<< DefaultKeyFormatter(this->key2()) <<
@@ -163,9 +173,9 @@ namespace gtsam {
   };
 
   /// traits
-  template<class POSE, class LANDMARK, class CALIBRATION>
-  struct traits<ProjectionFactorCalibration<POSE, LANDMARK, CALIBRATION> > :
-      public Testable<ProjectionFactorCalibration<POSE, LANDMARK, CALIBRATION> > {
+  template<class POSE, class LANDMARK, class ROT, class CALIBRATION>
+  struct traits<ProjectionFactorCalibrationRotationOnly<POSE, LANDMARK, ROT, CALIBRATION> > :
+      public Testable<ProjectionFactorCalibrationRotationOnly<POSE, LANDMARK, ROT, CALIBRATION> > {
   };
 
 } // \ namespace gtsam

@@ -50,6 +50,33 @@ std::vector<gtsam::Point3> readPoints(std::string const &feature_filepath) {
 }
 
 /* ************************************************************************* */
+gtsam::Point3 readTranslation(std::string const &fixed_translation_file_path) {
+  
+  // Create the fixed ground truth for the translation vector
+  gtsam::Point3 extrinsic_translation;
+
+  // read file
+  std::ifstream file(fixed_translation_file_path);
+  std::string str;
+  if (!file.is_open()) {
+      std::cout << "Error while opening feature file " + fixed_translation_file_path + "\n";
+      exit(1);
+  }
+  // Write to gtsam point vector
+  while (std::getline(file, str)) {
+    std::string::size_type sz;
+
+    float x = std::stof(str, &sz);
+    str = str.substr(sz);
+    float y = std::stof(str, &sz);
+    str = str.substr(sz);
+    float z = std::stof(str, &sz);
+    extrinsic_translation = gtsam::Point3(x,y,z);
+  }
+  return extrinsic_translation;
+}
+
+/* ************************************************************************* */
 std::vector<gtsam::Pose3> readPoses(std::string const &pose_filepath) {
   
   // Create the set of ground-truth poses

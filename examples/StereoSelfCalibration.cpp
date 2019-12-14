@@ -1,6 +1,7 @@
 // For loading the data
 // #include "StereoCalibrationData.h"
 #include "StraightTrajectory.h"
+#include "ReadTrajectory.h"
 
 // Camera observations of landmarks (i.e. pixel coordinates) will be stored as Point2 (x, y).
 #include <gtsam/geometry/Point2.h>
@@ -19,8 +20,8 @@
 // SFM-specific factors
 #include <gtsam/slam/PriorFactor.h>
 #include <gtsam/slam/ProjectionFactor.h>
-#include <gtsam/slam/ProjectionFactorCalibration.h> // does calibration !
-#include <gtsam/slam/ProjectionFactorCalibrationWithTranslation.h> // does calibration !
+#include <gtsam/slam/ProjectionFactorCalibrationFull.h> // does calibration !
+#include <gtsam/slam/ProjectionFactorCalibrationRotationOnly.h> // does calibration !
 
 // Standard headers
 #include <cmath>
@@ -37,7 +38,11 @@ using namespace gtsam;
 int main(int argc, char* argv[]) {
 
   // USAGE:
+  // Solve only for extrinsic rotation
   // ./StereoSelfCalibration 0 true 0.02 1000 1.0 rounding
+
+  // Solve for complete extrinsic pose
+  // ./StereoSelfCalibration 0 true 0.02 1000 1.0 rounding true
 
   // Some constants
   int counter = atoi(argv[1]);
@@ -53,6 +58,8 @@ int main(int argc, char* argv[]) {
   else{
     opt_translation_flag = "false";
   }
+
+
 
   // Create experiment directory
   const int dir_err = system(("mkdir -p " + exp_name).c_str());
@@ -72,8 +79,13 @@ int main(int argc, char* argv[]) {
     feature_rounding = true;
   }
 
+  Point3 fixed_extrinsic_translation;
   if (opt_translation_flag == "true"){
     opt_translation = true;
+  }
+  else{
+    string fixed_translation_path = "../../examples/Data/StereoSelfCalibration/FixedTranslationVector.txt";
+    fixed_extrinsic_translation =  readTranslation(fixed_translation_path);
   }
 
   // Create the set of ground-truth
@@ -92,12 +104,13 @@ int main(int argc, char* argv[]) {
   graph.emplace_shared<PriorFactor<Pose3> >(Symbol('x', 0), poses[0], poseNoise);
 
   // Add a prior on the extrinsic calibration parameters
-  noiseModel::Diagonal::shared_ptr extrinsicNoise = noiseModel::Diagonal::Sigmas((Vector(3) << Vector3::Constant(0.3)).finished()); // 30cm std on x,y,z 0.1 rad on roll,pitch,yaw
-  graph.emplace_shared<PriorFactor<Rot3> >(Symbol('R', 0), extrinsic[0].rotation(), extrinsicNoise);
-
   if (opt_translation){
-    noiseModel::Diagonal::shared_ptr baselineNoise = noiseModel::Diagonal::Sigmas((Vector(3) << Vector3::Constant(0.3)).finished()); // 30cm std on x,y,z 0.1 rad on roll,pitch,yaw
-    graph.emplace_shared<PriorFactor<Point3> >(Symbol('t', 0), extrinsic[0].translation(), baselineNoise);
+    noiseModel::Diagonal::shared_ptr extrinsicNoise = noiseModel::Diagonal::Sigmas((Vector(6) << Vector3::Constant(0.3), Vector3::Constant(0.1)).finished()); // 30cm std on x,y,z 0.1 rad on roll,pitch,yaw
+    graph.emplace_shared<PriorFactor<Pose3> >(Symbol('R', 0), extrinsic[0], extrinsicNoise);
+  }
+  else{
+    noiseModel::Diagonal::shared_ptr extrinsicNoise = noiseModel::Diagonal::Sigmas((Vector(3) << Vector3::Constant(0.3)).finished()); // 30cm std on x,y,z 0.1 rad on roll,pitch,yaw
+    graph.emplace_shared<PriorFactor<Rot3> >(Symbol('R', 0), extrinsic[0].rotation(), extrinsicNoise);
   }
 
   // Define intrinsics
@@ -106,90 +119,9 @@ int main(int argc, char* argv[]) {
 
   // Simulated measurements from each camera pose, adding them to the factor graph
   noiseModel::Isotropic::shared_ptr measurementNoise = noiseModel::Isotropic::Sigma(2, measurement_noise);
+
   // Keep flag list for selecting which landmarks have been seen
   vector<int> visible_landmarks(points.size(), 0);
-
-
-
-
-// ****************************************************************************************************
-
-  // cout << "*********" << "\n";
-
-  // Pose3 init = Pose3(gtsam::Rot3::Ypr(M_PI/2,0,0), gtsam::Point3(30, 0, 0));
-  // Point3 pt3 = Point3(30,5,2);
-  // SimpleCamera cam(init, *KLeft);
-
-  // cout<<"\n";
-  // init.print();
-  // cout<<"\n";
-  // pt3.print();
-  // cout<<"\n";
-
-  // try
-  // {
-  //   Point2 pt2 = cam.project(pt3);
-  //   pt2.print();
-  //   cout<<"\n";
-  // }
-  // catch (int e)
-  // {
-  //   cout << "Projection error" << e << '\n';
-  // }
-
-  // cout << "*********" << "\n";
-
-  // Pose3 init1 = Pose3(gtsam::Rot3::Ypr(M_PI/2,0,0), gtsam::Point3(30, 0, 0));
-  // Point3 pt31 = Point3(30,5,10);
-  // SimpleCamera cam1(init1, *KLeft);
-
-  // cout<<"\n";
-  // init1.print();
-  // cout<<"\n";
-  // pt31.print();
-  // cout<<"\n";
-
-  // try
-  // {
-  //   Point2 pt21 = cam1.project(pt31);
-  //   pt21.print();
-  //   cout<<"\n";
-  // }
-  // catch (int e)
-  // {
-  //   cout << "Projection error" << e << '\n';
-  // }
-
-  // cout << "*********" << "\n";
-
-
-  // Pose3 init2 = Pose3(gtsam::Rot3::Ypr(M_PI/2,0,0), gtsam::Point3(30, 0, 0));
-  // Point3 pt32 = Point3(30,5,15);
-  // SimpleCamera cam2(init2, *KLeft);
-
-  // cout<<"\n";
-  // init2.print();
-  // cout<<"\n";
-  // pt32.print();
-  // cout<<"\n";
-
-  // try
-  // {
-  //   Point2 pt22 = cam2.project(pt32);
-  //   pt22.print();
-  //   cout<<"\n";
-  // }
-  // catch (int e)
-  // {
-  //   cout << "Projection error" << e << '\n';
-  // }
-
-  // cout << "*********" << "\n";
-
-
-// ****************************************************************************************************
-
-
 
 
   float mean_feature_count = 0;
@@ -249,10 +181,10 @@ int main(int argc, char* argv[]) {
         feature_count++;
         graph.emplace_shared<GenericProjectionFactor<Pose3, Point3, Cal3_S2> >(measurementLeft, measurementNoise, Symbol('x', i), Symbol('l', j), KLeft);
         if (opt_translation){
-          graph.emplace_shared<ProjectionFactorCalibrationWithTranslation<Pose3, Point3, Rot3, Point3, Cal3_S2> >(measurementRight, measurementNoise, Symbol('x', i), Symbol('R', i), Symbol('t', i), Symbol('l', j), KRight);
+          graph.emplace_shared<ProjectionFactorCalibrationFull<Pose3, Point3, Cal3_S2> >(measurementRight, measurementNoise, Symbol('x', i), Symbol('R', i), Symbol('l', j), KRight);
         }
         else{
-          graph.emplace_shared<ProjectionFactorCalibration<Pose3, Point3, Rot3, Cal3_S2> >(measurementRight, measurementNoise, Symbol('x', i), Symbol('R', i), Symbol('l', j), KRight);
+          graph.emplace_shared<ProjectionFactorCalibrationRotationOnly<Pose3, Point3, Rot3, Cal3_S2> >(measurementRight, measurementNoise, Symbol('x', i), Symbol('R', i), Symbol('l', j), KRight);
         }
       }
     }
@@ -270,14 +202,15 @@ int main(int argc, char* argv[]) {
   /* Create the initial estimate to the solution */
   /* now including an estimate on the camera calibration parameters */
   Values initialEstimate;
-  for (size_t i = 0; i < poses.size(); ++i)
-    initialEstimate.insert(Symbol('R', i), extrinsic[i].rotation());
   if (opt_translation){
     for (size_t i = 0; i < poses.size(); ++i)
-      initialEstimate.insert(Symbol('t', i), extrinsic[i].translation());
+      initialEstimate.insert(Symbol('R', i), extrinsic[i]);
+  }
+  else{
+    for (size_t i = 0; i < poses.size(); ++i)
+      initialEstimate.insert(Symbol('R', i), extrinsic[i].rotation());
   }
   for (size_t i = 0; i < poses.size(); ++i)
-    // initialEstimate.insert(Symbol('x', i), poses[i].compose(Pose3(Rot3::Rodrigues(-0.1, 0.2, 0.25), Point3(0.05, -0.10, 0.20))));
     initialEstimate.insert(Symbol('x', i), poses[i]);
   for (size_t j = 0; j < points.size(); ++j){
     if (visible_landmarks[j] == 1) {
@@ -285,66 +218,25 @@ int main(int argc, char* argv[]) {
     }
   }
 
+
   /* Optimize the graph and print results */
   // Values result = DoglegOptimizer(graph, initialEstimate).optimize();
   Values result = LevenbergMarquardtOptimizer(graph, initialEstimate).optimize();
 
   Values rot_filtered = result.filter(Symbol::ChrTest('R'));
   Key Rkey = symbol('R', poses.size()-1);
-  Rot3 estimated_rotation = rot_filtered.at(Rkey).cast<Rot3>();
-  Point3 estimated_translation;
-
+  Pose3 estimated_extrinsic_pose;
   if (opt_translation){
-    Values trans_filtered = result.filter(Symbol::ChrTest('t'));
-    Key tkey = symbol('t', poses.size()-1);
-    estimated_translation = trans_filtered.at(tkey).cast<Point3>();
+    estimated_extrinsic_pose = rot_filtered.at(Rkey).cast<Pose3>();
   }
   else{
-    estimated_translation = Point3(0.0, 0.1, 0.0);
+    estimated_extrinsic_pose = Pose3(rot_filtered.at(Rkey).cast<Rot3>(), fixed_extrinsic_translation);
   }
-
-  Pose3 estimated_extrinsic_pose = Pose3(estimated_rotation, estimated_translation);
+  
   Pose3 error_pose = estimated_extrinsic_pose.compose(deviatedExtrinsics[poses.size()-1].inverse());
   Vector3 rot_final_error = error_pose.rotation().ypr();
   Vector3 tr_final_error = error_pose.translation();
 
-
-  // Calcuate errors and store them
-  // int i = 0;
-  // Vector3 rot_final_error;
-  // Vector3 tr_final_error;
-  // Pose3 estimated_extrinsic_pose;
-  // for(const Values::Filtered<Value>::KeyValuePair& key_value: pose_filtered.filter(Symbol::ChrTest('R'))) {
-  //   Rot3 estimated_extrinsic = key_value.value.cast<Rot3>();
-  //   cout << estimated_extrinsic << "\n";
-  //   estimated_extrinsic_pose = Pose3(estimated_extrinsic, Point3(0.0, 0.1, 0.0));
-  //   Pose3 error_pose = estimated_extrinsic_pose.compose(deviatedExtrinsics[i].inverse());
-  //   // Vector3 rot = estimated_extrinsic.rotation().ypr();
-  //   // Point3 tr = estimated_extrinsic.translation();
-
-  //   Vector3 error_rot = error_pose.rotation().ypr();
-  //   Point3 error_tr = error_pose.translation();
-
-  //   rot_final_error = error_rot;
-  //   tr_final_error = error_tr;
-  //   if (print_log) {
-  //     cout << error_rot;
-  //     cout << "\n";
-  //     cout << error_tr;
-  //     cout << "\n";
-  //     cout << "\n";
-  //   }
-  //   // if (print_log) {
-  //   //   cout << estimated_extrinsic;
-  //   //   cout << "\n";
-  //   //   cout << extrinsic[i];
-  //   //   cout << "\n";
-  //   //   cout << deviatedExtrinsics[i];
-  //   //   cout << "\n";
-  //   //   cout << "\n";
-  //   // }
-  //   ++i;
-  // }
 
   ofstream file;
   string filename;
@@ -398,7 +290,10 @@ int main(int argc, char* argv[]) {
         total_count++; 
         float distance = sqrt(pow(measurementRight[0] - measurementRightGroundTruth[0], 2) + pow(measurementRight[1] - measurementRightGroundTruth[1], 2));
         reprojection_error_sum += distance;
-        Matrix3 essential_matrix_estimated = skewSymmetric(0.0, 0.1, 0.0) * estimated_extrinsic_pose.rotation().matrix();
+        float t1 = estimated_extrinsic_pose.translation()[0];
+        float t2 = estimated_extrinsic_pose.translation()[1];
+        float t3 = estimated_extrinsic_pose.translation()[2];
+        Matrix3 essential_matrix_estimated = skewSymmetric(t1, t2, t3) * estimated_extrinsic_pose.rotation().matrix();
         Vector3 xleft = (*KLeft).matrix_inverse() * Vector3(measurementLeft[0], measurementLeft[1], 1);
         Vector3 xright = (*KRight).matrix_inverse() * Vector3(measurementRight[0], measurementRight[1], 1);
         epipolar_error_sum += fabs(xright.transpose() * essential_matrix_estimated * xleft);

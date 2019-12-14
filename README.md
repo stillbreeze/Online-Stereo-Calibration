@@ -4,21 +4,21 @@ README - Online Stereo Camera Calibration
 How to run the calibration code?
 --------------------------------
 
-The GTSAM setup instruction are given below. After compilation, go to the `build/examples` folder and run `StereoSelfCalibrationAPI`. The script requires an experiment name and a experiment ID and will create a folder by that name with the results specified by the ID. For example:
+The GTSAM setup instruction are given below. After compilation, go to the `build/examples` folder and run `StereoSelfCalibrationAPI`. The script requires an experiment name, an experiment ID and a mode parameter which can be either 'rot' (optimize only for extrinsic rotations) or 'pose' (optimize for the full extrinsic pose). This will create a folder by that name with the results specified by the ID. For example:
 
 ```
-./StereoSelfCalibrationAPI trial_exp 1
+./StereoSelfCalibrationAPI trial_exp 1 rot
 ```
 The above command will create a folder `trial_exp` with 2 files.
 `error_1.txt` which contains 7 lines. The first 6 are calibration errors for the extrinsics (yaw, pitch, roll, x, y, z respectively) and the last value is the average no of features seen from each pose.
-`result_1.txt` which contains 6 extrinsic parameter values (yaw, pitch, roll, x, y, z respectively) for all poses where each line corresponds to a pose.
+`result_1.txt` which contains 6 estimated extrinsic parameter values (yaw, pitch, roll, x, y, z respectively) for the final frame.
 
-By default, the data for the calibration is picked up from [`examples/Data/StereoSelfCalibration/`](examples/Data/StereoSelfCalibration/) folder. All these files are space separated values of poses (in the order yaw, pitch, roll, x, y, z) in radians/meters or landmarks (in the order x, y, z) in meters. There are 5 files, namely the feature points, the ground truth pose, the deviated pose (to simulate odometry measurements), relative extrinsic pose and deviated extrinsic pose. They currently simulate a straight trajectory.
+By default, the data for the calibration is picked up from [`examples/Data/StereoSelfCalibration/`](examples/Data/StereoSelfCalibration/) folder. All these files are space separated values of poses (in the order yaw, pitch, roll, x, y, z) in radians/meters or landmarks (in the order x, y, z) in meters. There are 5 files, namely the feature points, the ground truth pose, the deviated pose (to simulate noisy odometry measurements), stereo extrinsic ground truth pose and deviated extrinsic pose. They currently have dummy values.
 
 The executable also accepts the paths of the 5 files mentioned above as command line arguments:
 
 ```
-./StereoSelfCalibrationAPI trial_exp 1 feature_filepath pose_filepath pose_deviated_filepath extrinsic_filepath extrinsic_deviated_filepath
+./StereoSelfCalibrationAPI trial_exp 1 rot feature_filepath pose_filepath pose_deviated_filepath extrinsic_filepath extrinsic_deviated_filepath
 ```
 
 In case someone wants to modify a part of the code, the main script is here: [`examples/StereoSelfCalibrationAPI.cpp`](examples/StereoSelfCalibrationAPI.cpp)
