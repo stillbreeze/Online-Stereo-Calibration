@@ -23,7 +23,7 @@ The executable also accepts the paths of the 5 files mentioned above as command 
 
 In case someone wants to modify a part of the code, the main script is here: [`examples/StereoSelfCalibrationAPI.cpp`](examples/StereoSelfCalibrationAPI.cpp)
 
-The code for computing metrics which quantify miscalibration and tell when to start recalibrating and updating the extrinsics are in [`examples/StereoSelfCalibration.cpp#L252`](examples/StereoSelfCalibration.cpp#L252) and [`examples/StereoSelfCalibration.cpp#L306`](examples/StereoSelfCalibration.cpp#L306) and can be ported to the API script above. The instructions for running this script are similar and at the top of the file. This script dumps the errors and the values of the metrics. The results for these are given in the [`Final Capstone Presentation.pdf`](presentation).
+The code for computing metrics which quantify miscalibration and tell when to start recalibrating and updating the extrinsics are in [`examples/StereoSelfCalibration.cpp#L252`](examples/StereoSelfCalibration.cpp#L252) and [`examples/StereoSelfCalibration.cpp#L306`](examples/StereoSelfCalibration.cpp#L306) and can be ported to the API script above. The instructions for running this script are similar and at the top of the file. This script dumps the errors and the values of the metrics. The results for these are given in the [`presentation`](Final_Capstone_Presentation.pdf).
 
 Factor graph model used
 -----------------------
